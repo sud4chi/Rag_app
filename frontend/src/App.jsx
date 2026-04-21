@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const API_BASE = "http://localhost:4567";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 export default function App() {
   const [messages, setMessages] = useState([
@@ -20,7 +20,7 @@ export default function App() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/chat`, {
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
