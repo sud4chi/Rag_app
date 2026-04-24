@@ -1,5 +1,5 @@
 :root {
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
   color: #1f2937;
   background:
     radial-gradient(circle at top, #fef3c7, #fff7ed 35%, #f8fafc 70%);
@@ -15,8 +15,21 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input,
+select {
   font: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
 }
 
 .app-shell {
@@ -27,10 +40,10 @@ textarea {
 }
 
 .chat-card {
-  width: min(100%, 760px);
+  width: min(100%, 860px);
   min-height: 80vh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 24px;
@@ -40,7 +53,8 @@ textarea {
 }
 
 .chat-header {
-  padding: 24px 24px 12px;
+  padding: 24px 24px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .chat-header h1 {
@@ -54,6 +68,34 @@ textarea {
   font-size: 0.9rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.tab {
+  border: 1px solid rgba(194, 65, 12, 0.18);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #9a3412;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: #c2410c;
+  border-color: #c2410c;
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(194, 65, 12, 0.2);
+}
+
+.messages,
+.panel {
+  min-height: 0;
 }
 
 .messages {
@@ -96,29 +138,192 @@ textarea {
   border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
-.composer textarea {
+.composer textarea,
+.field input,
+.field textarea,
+.field select {
   width: 100%;
   resize: vertical;
-  min-height: 88px;
+  min-height: 56px;
   padding: 14px 16px;
   border: 1px solid #cbd5e1;
   border-radius: 16px;
   background: #fff;
 }
 
-.composer button {
-  justify-self: end;
+.composer textarea {
+  min-height: 88px;
+}
+
+.composer textarea:focus,
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: none;
+  border-color: #c2410c;
+  box-shadow: 0 0 0 4px rgba(194, 65, 12, 0.12);
+}
+
+.prompt-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.composer button,
+.form-actions button,
+.secondary-button {
   border: 0;
   border-radius: 999px;
   padding: 12px 22px;
-  color: #fff;
-  background: #c2410c;
   cursor: pointer;
 }
 
-.composer button:disabled {
+.composer button,
+.form-actions button {
+  justify-self: end;
+  color: #fff;
+  background: #c2410c;
+}
+
+.secondary-button {
+  background: #fff;
+  color: #9a3412;
+  border: 1px solid rgba(194, 65, 12, 0.2);
+}
+
+.danger-button {
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #fff1f2;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.danger-button:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.composer button:disabled,
+.form-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.panel {
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.panel-copy {
+  margin: 6px 0 0;
+  color: #64748b;
+}
+
+.prompt-list {
+  display: grid;
+  gap: 16px;
+}
+
+.prompt-item {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.prompt-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.prompt-item-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.prompt-item-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #9a3412;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.prompt-body {
+  margin: 14px 0 12px;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.prompt-meta {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.prompt-form {
+  display: grid;
+  gap: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.field textarea {
+  min-height: 220px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.status-text {
+  margin: 0;
+  color: #475569;
+}
+
+.status-text.error {
+  color: #b91c1c;
+}
+
+.status-text.success {
+  color: #15803d;
 }
 
 @media (max-width: 640px) {
@@ -133,5 +338,17 @@ textarea {
 
   .message {
     max-width: 92%;
+  }
+
+  .panel-header,
+  .prompt-item-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .secondary-button,
+  .form-actions button,
+  .composer button {
+    width: 100%;
   }
 }

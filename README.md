@@ -134,4 +134,50 @@ server {
 ## 補足
 
 - モデル名を変えたい場合は `OLLAMA_MODEL` を変更してください。
-- この実装は会話履歴をフロントエンドの state にだけ持つ最小構成です。DB 保存、ストリーミング、認証は入れていません。
+- この実装はチャット機能に加えて、`sqlite` にプロンプトを保存する API を持ちます。
+
+## Prompt 保存 API
+
+バックエンド起動時に `backend/db/app.sqlite3` を自動作成し、`prompts` テーブルを初期化します。
+
+カラム:
+
+- `id`
+- `title`
+- `body`
+- `tag`
+- `created_at`
+- `updated_at`
+
+### 取得
+
+- `GET /api/prompts`
+- `GET /api/prompts/:id`
+
+### 作成
+
+`POST /api/prompts`
+
+```json
+{
+  "title": "要約用プロンプト",
+  "body": "次の文章を3行で要約してください。",
+  "tag": "summary"
+}
+```
+
+### 更新
+
+`PUT /api/prompts/:id`
+
+```json
+{
+  "title": "改善した要約用プロンプト",
+  "body": "次の文章を箇条書き3点で要約してください。",
+  "tag": "summary"
+}
+```
+
+### 削除
+
+- `DELETE /api/prompts/:id`
