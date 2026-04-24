@@ -4,6 +4,7 @@ require "net/http"
 require "sqlite3"
 require "sinatra"
 require "time"
+require 'dotenv/load'
 
 set :bind, "0.0.0.0"
 set :port, ENV.fetch("PORT", 4567)
