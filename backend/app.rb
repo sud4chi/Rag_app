@@ -1,4 +1,3 @@
-require "fileutils"
 require "json"
 require "net/http"
 require "sqlite3"
@@ -8,6 +7,15 @@ require "time"
 set :bind, "0.0.0.0"
 set :port, ENV.fetch("PORT", 4567)
 set :server, :webrick
+
+def ensure_sqlite_file!(path, label)
+  raise "#{label} が見つかりません: #{path}" unless File.file?(path)
+end
+
+def ensure_table_exists!(connection, table_name, label)
+  row = connection.get_first_row("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [table_name])
+  raise "#{label} に #{table_name} テーブルがありません。" unless row
+end
 
 helpers do
   def allowed_origins
@@ -38,11 +46,19 @@ helpers do
   end
 
   def db_path
-    ENV.fetch("DATABASE_URL", File.expand_path("db/app.sqlite3", __dir__))
+    ENV.fetch("DATABASE_URL", File.expand_path("db/prompt.db", __dir__))
   end
 
   def db
     settings.db
+  end
+
+  def wnjpn_db_path
+    ENV.fetch("WNJPN_DATABASE_URL", File.expand_path("db/wnjpn.db", __dir__))
+  end
+
+  def wnjpn_db
+    settings.wnjpn_db
   end
 
   def parse_json_body
@@ -77,23 +93,23 @@ helpers do
 end
 
 configure do
-  db_file = ENV.fetch("DATABASE_URL", File.expand_path("db/app.sqlite3", __dir__))
-  FileUtils.mkdir_p(File.dirname(db_file))
+  db_file = ENV.fetch("DATABASE_URL", File.expand_path("db/prompt.db", __dir__))
+  ensure_sqlite_file!(db_file, "プロンプトDB")
 
   connection = SQLite3::Database.new(db_file)
   connection.results_as_hash = true
-  connection.execute_batch(<<~SQL)
-    CREATE TABLE IF NOT EXISTS prompts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      tag TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  SQL
+  ensure_table_exists!(connection, "prompts", "プロンプトDB")
 
   set :db, connection
+
+  wnjpn_file = ENV.fetch("WNJPN_DATABASE_URL", File.expand_path("db/wnjpn.db", __dir__))
+  ensure_sqlite_file!(wnjpn_file, "類義語DB")
+
+  wnjpn_connection = SQLite3::Database.new(wnjpn_file)
+  wnjpn_connection.results_as_hash = true
+  ensure_table_exists!(wnjpn_connection, "word", "類義語DB")
+  ensure_table_exists!(wnjpn_connection, "sense", "類義語DB")
+  set :wnjpn_db, wnjpn_connection
 end
 
 before do
@@ -218,4 +234,32 @@ delete "/api/prompts/:id" do
   db.execute("DELETE FROM prompts WHERE id = ?", params[:id])
   status 204
   body ""
+end
+
+get "/api/synonyms" do
+  lemma = params[:lemma]&.strip
+  halt 400, { error: "lemma は必須です。" }.to_json if lemma.nil? || lemma.empty?
+
+  rows = wnjpn_db.execute(<<~SQL, [lemma])
+    SELECT DISTINCT w2.lemma
+    FROM word w1
+    JOIN sense s1
+      ON w1.wordid = s1.wordid
+     AND s1.lang = 'jpn'
+    JOIN sense s2
+      ON s1.synset = s2.synset
+     AND s2.lang = 'jpn'
+    JOIN word w2
+      ON s2.wordid = w2.wordid
+     AND w2.lang = 'jpn'
+    WHERE w1.lemma = ?
+      AND w1.lang = 'jpn'
+      AND w2.lemma != w1.lemma
+    ORDER BY w2.lemma COLLATE NOCASE ASC
+  SQL
+
+  {
+    lemma: lemma,
+    synonyms: rows.map { |row| row["lemma"] }
+  }.to_json
 end

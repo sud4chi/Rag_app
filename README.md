@@ -138,7 +138,9 @@ server {
 
 ## Prompt 保存 API
 
-バックエンド起動時に `backend/db/app.sqlite3` を自動作成し、`prompts` テーブルを初期化します。
+プロンプト保存には既存の SQLite ファイル `backend/db/prompt.db` を使います。
+別パスを使う場合は `DATABASE_URL` で上書きできます。
+起動時にこのファイルと `prompts` テーブルが存在しない場合はエラーになります。
 
 カラム:
 
@@ -148,6 +150,22 @@ server {
 - `tag`
 - `created_at`
 - `updated_at`
+
+## 類義語 API
+
+`WNJPN` の SQLite ファイルを `backend/db/wnjpn.db` に配置すると、日本語の類義語検索 API を利用できます。
+別パスを使う場合は `WNJPN_DATABASE_URL` で上書きできます。
+
+`GET /api/synonyms?lemma=嬉しい`
+
+レスポンス例:
+
+```json
+{
+  "lemma": "嬉しい",
+  "synonyms": ["うれしい", "喜ばしい", "幸せ"]
+}
+```
 
 ### 取得
 
