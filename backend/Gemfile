@@ -6,3 +6,5 @@ gem "puma"
 gem "sqlite3"
 gem "webrick"
 gem 'dotenv'
+gem "ffi", "< 1.17"
+gem "natto"

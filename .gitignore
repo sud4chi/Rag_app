@@ -9,6 +9,8 @@ pnpm-debug.log*
 # Ruby
 backend/.bundle/
 backend/vendor/bundle/
+backend/db/
+backend/vendor/
 
 # Environment files
 .env

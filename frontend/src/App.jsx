@@ -56,7 +56,10 @@ export default function App() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ messages: nextMessages })
+        body: JSON.stringify({
+          messages: nextMessages,
+          prompt_id: selectedPromptId || null
+        })
       });
 
       const data = await response.json();

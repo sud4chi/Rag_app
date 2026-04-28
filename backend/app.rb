@@ -4,6 +4,7 @@ require "sqlite3"
 require "sinatra"
 require "time"
 require 'dotenv/load'
+require "natto"
 
 set :bind, "0.0.0.0"
 set :port, ENV.fetch("PORT", 4567)
@@ -67,6 +68,78 @@ helpers do
     request_body.empty? ? {} : JSON.parse(request_body)
   end
 
+  def find_prompt(id)
+    return nil if id.nil? || id.to_s.strip.empty?
+
+    db.get_first_row("SELECT * FROM prompts WHERE id = ?", id)
+  end
+
+  def latest_user_message(messages)
+    messages.reverse.find { |message| message["role"] == "user" || message[:role] == "user" }
+  end
+
+  def synonym_candidates(lemma)
+    rows = wnjpn_db.execute(<<~SQL, [lemma])
+      SELECT DISTINCT w2.lemma
+      FROM word w1
+      JOIN sense s1
+        ON w1.wordid = s1.wordid
+       AND s1.lang = 'jpn'
+      JOIN sense s2
+        ON s1.synset = s2.synset
+       AND s2.lang = 'jpn'
+      JOIN word w2
+        ON s2.wordid = w2.wordid
+       AND w2.lang = 'jpn'
+      WHERE w1.lemma = ?
+        AND w1.lang = 'jpn'
+        AND w2.lemma != w1.lemma
+      ORDER BY w2.lemma COLLATE NOCASE ASC
+    SQL
+
+    rows.map { |row| row["lemma"] }
+  end
+
+  def replaceable_node?(surface, features)
+    return false if surface.nil? || surface.empty?
+
+    pos = features[0]
+    subpos = features[1]
+    return false unless %w[名詞 動詞 形容詞 副詞].include?(pos)
+    return false if subpos == "非自立"
+
+    true
+  end
+
+  def base_form(surface, features)
+    lemma = features[6]
+    return surface if lemma.nil? || lemma.empty? || lemma == "*"
+
+    lemma
+  end
+
+  def synonymize_text(text)
+    output = []
+
+    settings.mecab.parse(text.to_s) do |node|
+      surface = node.surface.to_s
+      next if surface.empty?
+
+      features = node.feature.to_s.split(",")
+      unless replaceable_node?(surface, features)
+        output << surface
+        next
+      end
+
+      lemma = base_form(surface, features)
+      candidates = synonym_candidates(lemma)
+
+      output << (candidates.empty? ? surface : candidates.sample(random: settings.random))
+    end
+
+    output.join
+  end
+
   def now_iso8601
     Time.now.utc.iso8601
   end
@@ -102,6 +175,7 @@ configure do
   ensure_table_exists!(connection, "prompts", "プロンプトDB")
 
   set :db, connection
+  set :random, Random.new
 
   wnjpn_file = ENV.fetch("WNJPN_DATABASE_URL", File.expand_path("db/wnjpn.db", __dir__))
   ensure_sqlite_file!(wnjpn_file, "類義語DB")
@@ -111,6 +185,7 @@ configure do
   ensure_table_exists!(wnjpn_connection, "word", "類義語DB")
   ensure_table_exists!(wnjpn_connection, "sense", "類義語DB")
   set :wnjpn_db, wnjpn_connection
+  set :mecab, Natto::MeCab.new
 end
 
 before do
@@ -145,6 +220,18 @@ end
 post "/api/chat" do
   payload = parse_json_body
   messages = payload["messages"] || []
+  prompt = find_prompt(payload["prompt_id"])
+  user_message = latest_user_message(messages)
+
+  if prompt && prompt["tag"] == "synonyms"
+    halt 400, { error: "ユーザー入力が見つかりません。" }.to_json unless user_message
+
+    return({
+      message: synonymize_text(user_message["content"] || user_message[:content] || ""),
+      mode: "synonyms",
+      prompt_id: prompt["id"]
+    }.to_json)
+  end
 
   uri = ollama_uri
   ollama_request = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
@@ -241,26 +328,8 @@ get "/api/synonyms" do
   lemma = params[:lemma]&.strip
   halt 400, { error: "lemma は必須です。" }.to_json if lemma.nil? || lemma.empty?
 
-  rows = wnjpn_db.execute(<<~SQL, [lemma])
-    SELECT DISTINCT w2.lemma
-    FROM word w1
-    JOIN sense s1
-      ON w1.wordid = s1.wordid
-     AND s1.lang = 'jpn'
-    JOIN sense s2
-      ON s1.synset = s2.synset
-     AND s2.lang = 'jpn'
-    JOIN word w2
-      ON s2.wordid = w2.wordid
-     AND w2.lang = 'jpn'
-    WHERE w1.lemma = ?
-      AND w1.lang = 'jpn'
-      AND w2.lemma != w1.lemma
-    ORDER BY w2.lemma COLLATE NOCASE ASC
-  SQL
-
   {
     lemma: lemma,
-    synonyms: rows.map { |row| row["lemma"] }
+    synonyms: synonym_candidates(lemma)
   }.to_json
 end

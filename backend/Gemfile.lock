@@ -2,8 +2,12 @@ GEM
   remote: https://rubygems.org/
   specs:
     base64 (0.3.0)
+    dotenv (2.8.1)
+    ffi (1.16.3)
     mustermann (3.0.4)
       ruby2_keywords (~> 0.0.1)
+    natto (1.2.0)
+      ffi (>= 1.9.0)
     nio4r (2.7.5)
     puma (6.6.1)
       nio4r (~> 2.0)
@@ -28,6 +32,9 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  dotenv
+  ffi (< 1.17)
+  natto
   puma
   rackup
   sinatra

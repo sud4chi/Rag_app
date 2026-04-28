@@ -78,7 +78,8 @@ VITE_API_BASE_URL=
 {
   "messages": [
     { "role": "user", "content": "こんにちは" }
-  ]
+  ],
+  "prompt_id": 1
 }
 ```
 
@@ -90,11 +91,14 @@ VITE_API_BASE_URL=
 }
 ```
 
+`prompt_id` で選んだ保存済みプロンプトの `tag` が `synonyms` の場合は、LLM を呼ばずに入力文を形態素解析し、日本語類義語へランダム置換した結果をそのまま返します。
+
 ## ローカル開発
 
 1. ターミナル1で `ollama serve`
-2. ターミナル2で `cd backend && bundle install && bundle exec ruby app.rb`
-3. ターミナル3で `cd frontend && npm install && npm run dev`
+2. ターミナル2で `brew install mecab mecab-ipadic`
+3. ターミナル3で `cd backend && bundle install --path vendor/bundle && bundle exec ruby app.rb`
+4. ターミナル4で `cd frontend && npm install && npm run dev`
 
 フロントは `/api/chat` を叩きますが、開発時は Vite が自動で `http://localhost:4567` に転送します。フロントコードに `localhost:4567` を直書きしていないので、そのまま本番に移せます。
 
@@ -155,6 +159,7 @@ server {
 
 `WNJPN` の SQLite ファイルを `backend/db/wnjpn.db` に配置すると、日本語の類義語検索 API を利用できます。
 別パスを使う場合は `WNJPN_DATABASE_URL` で上書きできます。
+`synonyms` タグのプロンプトを使う場合は、別途 `MeCab` と `natto` が必要です。
 
 `GET /api/synonyms?lemma=嬉しい`
 
