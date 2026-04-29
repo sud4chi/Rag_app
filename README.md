@@ -96,8 +96,8 @@ VITE_API_BASE_URL=
 ## ローカル開発
 
 1. ターミナル1で `ollama serve`
-2. ターミナル2で `brew install mecab mecab-ipadic`
-3. ターミナル3で `cd backend && bundle install --path vendor/bundle && bundle exec ruby app.rb`
+2. ターミナル2で `cd backend && bundle install --path vendor/bundle && pip3 install -r requirements.txt`
+3. ターミナル3で `cd backend && bundle exec ruby app.rb`
 4. ターミナル4で `cd frontend && npm install && npm run dev`
 
 フロントは `/api/chat` を叩きますが、開発時は Vite が自動で `http://localhost:4567` に転送します。フロントコードに `localhost:4567` を直書きしていないので、そのまま本番に移せます。
@@ -159,7 +159,12 @@ server {
 
 `WNJPN` の SQLite ファイルを `backend/db/wnjpn.db` に配置すると、日本語の類義語検索 API を利用できます。
 別パスを使う場合は `WNJPN_DATABASE_URL` で上書きできます。
-`synonyms` タグのプロンプトを使う場合は、別途 `MeCab` と `natto` が必要です。
+`synonyms` タグのプロンプトを使う場合は、別途 `SudachiPy` と辞書が必要です。`cd backend && pip3 install -r requirements.txt` を実行してください。
+
+必要に応じて以下の環境変数で Python 実行環境を切り替えられます。
+
+- `SUDACHI_PYTHON`: `python3` 以外を使いたい場合の実行コマンド
+- `SUDACHI_SPLIT_MODE`: `A` / `B` / `C`。未指定時は `C`
 
 `GET /api/synonyms?lemma=嬉しい`
 

@@ -2,11 +2,11 @@ require "fileutils"
 require "json"
 require "logger"
 require "net/http"
+require "open3"
 require "sqlite3"
 require "sinatra"
 require "time"
 require 'dotenv/load'
-require "natto"
 
 set :bind, "0.0.0.0"
 set :port, ENV.fetch("PORT", 4567)
@@ -19,6 +19,15 @@ end
 def ensure_table_exists!(connection, table_name, label)
   row = connection.get_first_row("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [table_name])
   raise "#{label} に #{table_name} テーブルがありません。" unless row
+end
+
+def ensure_sudachi_available!(python_command, script_path)
+  stdout, stderr, status = Open3.capture3(python_command, script_path, "--healthcheck")
+  return if status.success?
+
+  detail = stderr.to_s.strip
+  detail = stdout.to_s.strip if detail.empty?
+  raise "SudachiPy を初期化できません。`pip install -r backend/requirements.txt` を実行してください。詳細: #{detail}"
 end
 
 helpers do
@@ -72,6 +81,14 @@ helpers do
 
   def app_logger
     settings.app_logger
+  end
+
+  def sudachi_python
+    settings.sudachi_python
+  end
+
+  def sudachi_script
+    settings.sudachi_script
   end
 
   def log_info(message)
@@ -136,13 +153,12 @@ helpers do
     pos = features[0]
     subpos = features[1]
     return false unless %w[名詞 動詞 形容詞 副詞].include?(pos)
-    return false if subpos == "非自立"
+    return false if subpos.to_s.include?("非自立")
 
     true
   end
 
-  def base_form(surface, features)
-    lemma = features[6]
+  def base_form(surface, lemma)
     return surface if lemma.nil? || lemma.empty? || lemma == "*"
 
     lemma
@@ -151,23 +167,41 @@ helpers do
   def synonymize_text(text)
     output = []
 
-    settings.mecab.parse(text.to_s) do |node|
-      surface = node.surface.to_s
+    sudachi_tokens(text.to_s).each do |node|
+      surface = node.fetch("surface", "").to_s
       next if surface.empty?
 
-      features = node.feature.to_s.split(",")
+      features = Array(node["pos"])
       unless replaceable_node?(surface, features)
         output << surface
         next
       end
 
-      lemma = base_form(surface, features)
+      lemma = base_form(surface, node["lemma"].to_s)
       candidates = synonym_candidates(lemma)
 
       output << (candidates.empty? ? surface : candidates.sample(random: settings.random))
     end
 
     output.join
+  end
+
+  def sudachi_tokens(text)
+    stdout, stderr, status = Open3.capture3(
+      sudachi_python,
+      sudachi_script,
+      stdin_data: { text: text, mode: ENV.fetch("SUDACHI_SPLIT_MODE", "C") }.to_json
+    )
+
+    unless status.success?
+      detail = stderr.to_s.strip
+      detail = stdout.to_s.strip if detail.empty?
+      raise "SudachiPy の解析に失敗しました: #{detail}"
+    end
+
+    JSON.parse(stdout)
+  rescue JSON::ParserError => e
+    raise "SudachiPy の応答を解釈できませんでした: #{e.message}"
   end
 
   def polish_synonymized_text(original_text, synonymized_text)
@@ -245,8 +279,14 @@ configure do
   ensure_table_exists!(wnjpn_connection, "word", "類義語DB")
   ensure_table_exists!(wnjpn_connection, "sense", "類義語DB")
   set :wnjpn_db, wnjpn_connection
-  set :mecab, Natto::MeCab.new
-  logger.info("app booted db=#{db_file} wnjpn_db=#{wnjpn_file} model=#{ENV.fetch("OLLAMA_MODEL", "gemma3:1b")}")
+
+  sudachi_python = ENV.fetch("SUDACHI_PYTHON", "python3")
+  sudachi_script = File.expand_path("scripts/sudachi_tokenize.py", __dir__)
+  ensure_sudachi_available!(sudachi_python, sudachi_script)
+  set :sudachi_python, sudachi_python
+  set :sudachi_script, sudachi_script
+
+  logger.info("app booted db=#{db_file} wnjpn_db=#{wnjpn_file} model=#{ENV.fetch("OLLAMA_MODEL", "gemma3:1b")} sudachi_python=#{sudachi_python}")
 end
 
 before do
