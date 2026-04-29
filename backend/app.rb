@@ -1,4 +1,6 @@
+require "fileutils"
 require "json"
+require "logger"
 require "net/http"
 require "sqlite3"
 require "sinatra"
@@ -68,6 +70,14 @@ helpers do
     request_body.empty? ? {} : JSON.parse(request_body)
   end
 
+  def app_logger
+    settings.app_logger
+  end
+
+  def log_info(message)
+    app_logger&.info(message)
+  end
+
   def find_prompt(id)
     return nil if id.nil? || id.to_s.strip.empty?
 
@@ -76,6 +86,26 @@ helpers do
 
   def latest_user_message(messages)
     messages.reverse.find { |message| message["role"] == "user" || message[:role] == "user" }
+  end
+
+  def ollama_chat(messages)
+    log_info("ollama request messages=#{messages.length} model=#{ollama_model}")
+
+    request = Net::HTTP::Post.new(ollama_uri, "Content-Type" => "application/json")
+    request.body = {
+      model: ollama_model,
+      stream: false,
+      messages: messages
+    }.to_json
+
+    response = Net::HTTP.start(ollama_uri.hostname, ollama_uri.port) do |http|
+      http.request(request)
+    end
+
+    halt response.code.to_i, response.body unless response.is_a?(Net::HTTPSuccess)
+
+    data = JSON.parse(response.body)
+    data.dig("message", "content") || ""
   end
 
   def synonym_candidates(lemma)
@@ -140,6 +170,27 @@ helpers do
     output.join
   end
 
+  def polish_synonymized_text(original_text, synonymized_text)
+    ollama_chat([
+      {
+        role: "system",
+        content: "あなたは日本語の校正者です。入力された文を自然で正しい日本語に整えてください。意味はできるだけ維持し、説明は付けず、整形後の文だけを返してください。"
+      },
+      {
+        role: "user",
+        content: <<~TEXT
+          元の文:
+          #{original_text}
+
+          類義語置換後の文:
+          #{synonymized_text}
+
+          類義語置換後の文をもとに、自然で正しい日本語の1文に整えてください。
+        TEXT
+      }
+    ])
+  end
+
   def now_iso8601
     Time.now.utc.iso8601
   end
@@ -167,6 +218,15 @@ helpers do
 end
 
 configure do
+  log_file = File.expand_path("app.log", __dir__)
+  FileUtils.touch(log_file)
+  logger = Logger.new(log_file, 10, 1_048_576)
+  logger.level = Logger::INFO
+  logger.formatter = proc do |severity, datetime, _progname, msg|
+    "#{datetime.utc.iso8601} #{severity} #{msg}\n"
+  end
+  set :app_logger, logger
+
   db_file = ENV.fetch("DATABASE_URL", File.expand_path("db/prompt.db", __dir__))
   ensure_sqlite_file!(db_file, "プロンプトDB")
 
@@ -186,6 +246,7 @@ configure do
   ensure_table_exists!(wnjpn_connection, "sense", "類義語DB")
   set :wnjpn_db, wnjpn_connection
   set :mecab, Natto::MeCab.new
+  logger.info("app booted db=#{db_file} wnjpn_db=#{wnjpn_file} model=#{ENV.fetch("OLLAMA_MODEL", "gemma3:1b")}")
 end
 
 before do
@@ -196,6 +257,7 @@ before do
     "Vary" => "Origin"
   )
   content_type :json if request.path_info.start_with?("/api/")
+  app_logger&.info("request method=#{request.request_method} path=#{request.path_info} ip=#{request.ip}")
 end
 
 options "*" do
@@ -207,6 +269,7 @@ get "/health" do
 end
 
 get "/api/health" do
+  log_info("health check")
   {
     status: "ok",
     model: ollama_model
@@ -222,34 +285,24 @@ post "/api/chat" do
   messages = payload["messages"] || []
   prompt = find_prompt(payload["prompt_id"])
   user_message = latest_user_message(messages)
+  log_info("chat received prompt_id=#{payload["prompt_id"] || "none"} messages=#{messages.length} prompt_tag=#{prompt && prompt["tag"]}")
 
   if prompt && prompt["tag"] == "synonyms"
     halt 400, { error: "ユーザー入力が見つかりません。" }.to_json unless user_message
 
+    original_text = user_message["content"] || user_message[:content] || ""
+    synonymized_text = synonymize_text(original_text)
+    log_info("synonyms mode original=#{original_text.inspect} synonymized=#{synonymized_text.inspect}")
+
     return({
-      message: synonymize_text(user_message["content"] || user_message[:content] || ""),
-      mode: "synonyms",
+      message: polish_synonymized_text(original_text, synonymized_text),
+      mode: "synonyms_llm",
       prompt_id: prompt["id"]
     }.to_json)
   end
 
-  uri = ollama_uri
-  ollama_request = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
-  ollama_request.body = {
-    model: ollama_model,
-    stream: false,
-    messages: messages
-  }.to_json
-
-  response = Net::HTTP.start(uri.hostname, uri.port) do |http|
-    http.request(ollama_request)
-  end
-
-  halt response.code.to_i, response.body unless response.is_a?(Net::HTTPSuccess)
-
-  data = JSON.parse(response.body)
   {
-    message: data.dig("message", "content") || ""
+    message: ollama_chat(messages)
   }.to_json
 rescue Errno::ECONNREFUSED
   status 503
@@ -262,11 +315,13 @@ rescue JSON::ParserError
 end
 
 get "/api/prompts" do
+  log_info("prompt list")
   rows = db.execute("SELECT * FROM prompts ORDER BY datetime(updated_at) DESC, id DESC")
   { prompts: rows.map { |row| serialize_prompt(row) } }.to_json
 end
 
 get "/api/prompts/:id" do
+  log_info("prompt fetch id=#{params[:id]}")
   row = db.get_first_row("SELECT * FROM prompts WHERE id = ?", params[:id])
   halt 404, { error: "Prompt が見つかりません。" }.to_json unless row
 
@@ -284,6 +339,7 @@ post "/api/prompts" do
     "INSERT INTO prompts (title, body, tag, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
     [payload["title"].strip, payload["body"].strip, tag.nil? || tag.empty? ? nil : tag, timestamp, timestamp]
   )
+  log_info("prompt created title=#{payload["title"].strip.inspect} tag=#{tag.inspect}")
 
   status 201
   row = db.get_first_row("SELECT * FROM prompts WHERE id = ?", db.last_insert_row_id)
@@ -307,6 +363,7 @@ put "/api/prompts/:id" do
     "UPDATE prompts SET title = ?, body = ?, tag = ?, updated_at = ? WHERE id = ?",
     [payload["title"].strip, payload["body"].strip, tag.nil? || tag.empty? ? nil : tag, timestamp, params[:id]]
   )
+  log_info("prompt updated id=#{params[:id]} title=#{payload["title"].strip.inspect} tag=#{tag.inspect}")
 
   row = db.get_first_row("SELECT * FROM prompts WHERE id = ?", params[:id])
   serialize_prompt(row).to_json
@@ -320,6 +377,7 @@ delete "/api/prompts/:id" do
   halt 404, { error: "Prompt が見つかりません。" }.to_json unless existing
 
   db.execute("DELETE FROM prompts WHERE id = ?", params[:id])
+  log_info("prompt deleted id=#{params[:id]}")
   status 204
   body ""
 end
@@ -327,6 +385,7 @@ end
 get "/api/synonyms" do
   lemma = params[:lemma]&.strip
   halt 400, { error: "lemma は必須です。" }.to_json if lemma.nil? || lemma.empty?
+  log_info("synonym lookup lemma=#{lemma.inspect}")
 
   {
     lemma: lemma,

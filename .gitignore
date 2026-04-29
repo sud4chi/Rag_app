@@ -11,6 +11,7 @@ backend/.bundle/
 backend/vendor/bundle/
 backend/db/
 backend/vendor/
+backend/app.log
 
 # Environment files
 .env

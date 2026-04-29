@@ -208,8 +208,9 @@ export default function App() {
     <div className="app-shell">
       <main className="chat-card">
         <header className="chat-header">
-          <p className="eyebrow">Ruby + React + Ollama</p>
-          <h1>Local LLM Chat</h1>
+          <div className="title-block">
+            <h1>Prompt Studio</h1>
+          </div>
           <div className="tab-bar" role="tablist" aria-label="画面切り替え">
             <button
               type="button"
@@ -223,14 +224,14 @@ export default function App() {
               className={activeTab === TABS.list ? "tab active" : "tab"}
               onClick={() => setActiveTab(TABS.list)}
             >
-              Prompt List
+              Library
             </button>
             <button
               type="button"
               className={activeTab === TABS.create ? "tab active" : "tab"}
               onClick={() => setActiveTab(TABS.create)}
             >
-              Save Prompt
+              New Prompt
             </button>
           </div>
         </header>
